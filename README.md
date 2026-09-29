@@ -15,7 +15,7 @@ decoding, image input) on guqiong96/Lsglang, with the CPU-side routed experts on
 |---|---|---|
 | 模型 | [lovedheart/Qwen3.8-Flash-Next-NVFP4-W4A16-ATTN-FP8-MTP-NVFP4](https://huggingface.co/lovedheart/Qwen3.8-Flash-Next-NVFP4-W4A16-ATTN-FP8-MTP-NVFP4)：lovedheart 对 Qwen 团队 **Qwen3.8 Flash Next** 的量化版（专家 NVFP4 W4A16，注意力 FP8，MTP 草稿专家 NVFP4），121 GB | — |
 | 推理框架 | guqiong96/Lsglang v1.4.12 @ [`c49d8f3703`](https://github.com/guqiong96/Lsglang/commit/c49d8f3703b1b829d0eedbd53f2a4c2443fa8800)；Qwen3.8 支持来自 sglang PR #36497（Qiaolin-Yu, "Introduce Qwen 3.8 Flash Next"），另有本地调试修改与验证过的 Split-K | `patches/lsglang-c49d8f37-qwen38fn.patch`（81 个文件） |
-| CPU 专家内核 | **lkqmoe** 0.3.2（闭源，编译版）：受 lk_moe 启发、针对 NVFP4 格式专项加速的 CPU/GPU 混合 MoE 内核。lk_moe 来自 lsglang 作者 guqiong96（[guqiong96/Lsglang](https://github.com/guqiong96/Lsglang)）；lkqmoe 独立实现其 `MOE_NVFP4` 接口，不含 lk_moe 代码 | `lkqmoe/` |
+| CPU 专家内核 | **lkqmoe** 0.4.1（闭源，编译版）：受 lk_moe 启发、针对 NVFP4 格式专项加速的 CPU/GPU 混合 MoE 内核。lk_moe 来自 lsglang 作者 guqiong96（[guqiong96/Lsglang](https://github.com/guqiong96/Lsglang)）；lkqmoe 独立实现其 `MOE_NVFP4` 接口，不含 lk_moe 代码 | `lkqmoe/` |
 | MTP 草稿热词表 | 从实际输出统计的 49152 个高频 token（只影响草稿接受率，目标模型仍验证每个 token） | `lkqmoe/draft-token-map-49152.pt`，`bench/build_token_map.py` |
 | 启动 | 本文测速所用的完整参数 | `launch/run-qwen38fn-nvfp4.sh` |
 
@@ -31,18 +31,18 @@ decoding, image input) on guqiong96/Lsglang, with the CPU-side routed experts on
 
 ## 速度
 
-测试条件：单请求，温度 0，`ignore_eos`，每点输出 1024 token（含思考内容）；输入是长日志文本，在 10% 深度埋一条事实并在末尾提问（`bench/speed_points.py`）。MTP 开启，32 层 GPU 常驻，其余见“运行方式”。2026-09-30 用本仓库的 lkqmoe 包实测，原始数据 `results/speed-points-20260930.json`。
+测试条件：单请求，温度 0，`ignore_eos`，每点输出 1024 token（含思考内容）；输入是长日志文本，在 10% 深度埋一条事实并在末尾提问（`bench/speed_points.py`）。MTP 开启，32 层 GPU 常驻，其余见“运行方式”。2026-09-30 用本仓库的 lkqmoe 0.4.1 包实测，原始数据 `results/speed-points-20260930.json`（0.3.2 的同类数据与三版本对比见 `results/`）。
 
 | 输入 token | 首 token 时间 | 预填充 tok/s | decode tok/s | 平均接受长度 | 找回埋藏事实 | 显存峰值 |
 |---:|---:|---:|---:|---:|:---:|---:|
-| 4,109 | 1.1 s | 3,676 | 200.3 | 3.42 | 是 | 66,940 MiB |
-| 8,315 | 1.4 s | 5,749 | 180.4 | 3.25 | 是 | 67,920 MiB |
-| 17,123 | 2.8 s | 6,179 | 170.1 | 3.12 | 是 | 69,882 MiB |
-| 33,265 | 5.6 s | 5,923 | 162.8 | 3.03 | 是 | 71,446 MiB |
-| 68,103 | 12.6 s | 5,410 | 169.3 | 3.01 | 是 | 71,932 MiB |
-| 134,941 | 27.4 s | 4,923 | 147.7 | 2.95 | 是 | 72,274 MiB |
-| 210,634 | 36.1 s | 5,837 | 154.5 | 2.90 | 是 | 72,396 MiB |
-| 252,609 | 44.4 s | 5,693 | 147.6 | 2.86 | 是 | 72,396 MiB |
+| 4,109 | 1.1 s | 3,725 | 197.5 | 3.31 | 是 | 66,940 MiB |
+| 8,315 | 1.6 s | 5,266 | 171.6 | 3.05 | 是 | 67,920 MiB |
+| 17,123 | 2.8 s | 6,109 | 193.0 | 3.10 | 是 | 69,882 MiB |
+| 33,265 | 5.6 s | 5,901 | 178.8 | 3.08 | 是 | 71,446 MiB |
+| 68,103 | 12.2 s | 5,583 | 155.9 | 2.98 | 是 | 71,932 MiB |
+| 134,941 | 26.7 s | 5,049 | 149.7 | 2.90 | 是 | 72,274 MiB |
+| 210,634 | 36.1 s | 5,830 | 165.7 | 2.89 | 是 | 72,396 MiB |
+| 252,609 | 44.5 s | 5,682 | 148.8 | 2.85 | 是 | 72,396 MiB |
 
 最后一档（253K 输入 + 1K 输出）接近 262,144 的上下文上限。接受长度按服务端累计平均统计。
 
@@ -97,7 +97,7 @@ LKQMOE_MODE=standalone  LKQMOE_ZERO_COPY=1  LKQMOE_MTP_QUANT=1  LKQMOE_MTP_ROUTE
 - 开源部分（Apache-2.0）：`python/sitecustomize.py`、`python/lkqmoe/gpu/mtp_quant.py`（让 MTP 草稿保留 NVFP4 量化，省约 2.9 GB 显存）、
   `python/lkqmoe/gpu/router_dependency.py`（MTP 路由的生产者/消费者依赖保护）。
 - 二进制许可见 `lkqmoe/LICENSE`：可免费使用、原样再分发；源码不公开。
-- 与闭源 `lk_moe` 在 118 个真实权重用例上逐位一致（相同的 FP32 数值路径），MTP 验证步较 lk_moe 基线快约 20%，decode 约 +24%。
+- Qwen 走 FP32 数值路径：0.4.1 与此前生产验证过的 0.3.2 在 118 个真实权重用例上逐位一致。同机同时段对比 0.3.2：MTP 验证步 16.69 → 16.35 ms，decode 160.0 → 164.6 tok/s，2K 输入首 token 缩短 10–22%（CPU 预填充按 8 token 分组），长输入预填充 +1–2%。
 - 硬件要求：x86-64 AVX512-BF16，4 个 NUMA 节点 × 16 物理核（其他拓扑未验证），CUDA GPU。
 
 ## 测试脚本（`bench/`）

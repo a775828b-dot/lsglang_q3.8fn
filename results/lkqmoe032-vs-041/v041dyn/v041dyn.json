@@ -1,0 +1,103 @@
+{
+ "summary": {
+  "label": "v041dyn",
+  "decode_tok_s": 162.04627401760945,
+  "verify_step_ms": 16.83520762857472,
+  "accept_length": 2.7291596245939895,
+  "cold32k_ttft_s": 4.944768396904692
+ },
+ "rows": [
+  {
+   "kind": "decode2k",
+   "domain": "chinese",
+   "rep": 0,
+   "ttft_s": 1.5455380310304463,
+   "decode_tok_s": 151.4072581572174,
+   "ms_per_token": 6.604703183790738,
+   "accept_length": 2.522167487684729,
+   "verify_step_ms": 16.658167635964816,
+   "text_head": "操作系统（Operating System, OS）是计算机硬件与用户之间的桥梁，其核心职责包括资源管理、进程调度、内存管理和文件系统服务。以下将详细解释操作系统如何调度进程、管理虚拟内存和处理文件缓存，并结合具体例子和常见误区进行说明。\n"
+  },
+  {
+   "kind": "decode2k",
+   "domain": "english",
+   "rep": 0,
+   "ttft_s": 1.1016123609151691,
+   "decode_tok_s": 141.159584482914,
+   "ms_per_token": 7.084180671564957,
+   "accept_length": 2.3813953488372093,
+   "verify_step_ms": 16.870234901587246,
+   "text_head": "Designing a practical adult literacy programme for a small community library requires a shift from traditional academic "
+  },
+  {
+   "kind": "decode2k",
+   "domain": "python",
+   "rep": 0,
+   "ttft_s": 1.1020786529406905,
+   "decode_tok_s": 171.59642378115672,
+   "ms_per_token": 5.827627277800015,
+   "accept_length": 2.8764044943820224,
+   "verify_step_ms": 16.76261329344723,
+   "text_head": "# Robust Asynchronous Task Scheduler in Python\n\n## Design Overview\n\nThe scheduler is built around several key components"
+  },
+  {
+   "kind": "decode2k",
+   "domain": "math",
+   "rep": 0,
+   "ttft_s": 1.09600567095913,
+   "decode_tok_s": 179.27983892123459,
+   "ms_per_token": 5.577872035233942,
+   "accept_length": 3.103030303030303,
+   "verify_step_ms": 17.308305951756232,
+   "text_head": "The provided background material is repetitive and contains no specific data regarding mathematical formulas, library ca"
+  },
+  {
+   "kind": "decode2k",
+   "domain": "chinese",
+   "rep": 1,
+   "ttft_s": 1.1036633250769228,
+   "decode_tok_s": 148.5946370252982,
+   "ms_per_token": 6.729717976495682,
+   "accept_length": 2.473429951690821,
+   "verify_step_ms": 16.645486009496565,
+   "text_head": "操作系统（Operating System, OS）是计算机硬件与用户之间的桥梁，其核心职责包括资源管理、进程调度、内存管理和文件系统服务。以下将详细解释操作系统如何调度进程、管理虚拟内存和处理文件缓存，并结合具体例子和常见误区进行说明。\n"
+  },
+  {
+   "kind": "decode2k",
+   "domain": "english",
+   "rep": 1,
+   "ttft_s": 1.1007606550119817,
+   "decode_tok_s": 141.2035420061372,
+   "ms_per_token": 7.081975322945769,
+   "accept_length": 2.3813953488372093,
+   "verify_step_ms": 16.864983094642948,
+   "text_head": "Designing a practical adult literacy program for a small community library requires a shift from traditional academic mo"
+  },
+  {
+   "kind": "decode2k",
+   "domain": "python",
+   "rep": 1,
+   "ttft_s": 1.1310258579906076,
+   "decode_tok_s": 180.46306167012094,
+   "ms_per_token": 5.541300201522453,
+   "accept_length": 3.029585798816568,
+   "verify_step_ms": 16.787844397511808,
+   "text_head": "# Robust Python Asynchronous Task Scheduler\n\n## Design Overview\n\nThe scheduler is built around these core principles:\n\n1"
+  },
+  {
+   "kind": "decode2k",
+   "domain": "math",
+   "rep": 1,
+   "ttft_s": 1.1321492409333587,
+   "decode_tok_s": 182.6658460967966,
+   "ms_per_token": 5.4744771470310285,
+   "accept_length": 3.065868263473054,
+   "verify_step_ms": 16.784025744190938,
+   "text_head": "Although the provided background material is repetitive and contains no specific mathematical data, the question asks fo"
+  },
+  {
+   "kind": "cold32k_ttft",
+   "ttft_s": 4.944768396904692
+  }
+ ]
+}

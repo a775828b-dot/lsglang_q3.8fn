@@ -1,0 +1,38 @@
+[
+ {
+  "target": 4096,
+  "prompt_tokens": 4109,
+  "completion_tokens": 512,
+  "ttft_s": 0.94,
+  "prefill_tok_s": 4366,
+  "decode_tok_s": 183.9,
+  "accept_length": 3.2,
+  "recall": true,
+  "vram_peak_mib": 71364,
+  "error": null
+ },
+ {
+  "target": 32768,
+  "prompt_tokens": 33265,
+  "completion_tokens": 512,
+  "ttft_s": 5.62,
+  "prefill_tok_s": 5918,
+  "decode_tok_s": 144.9,
+  "accept_length": 2.79,
+  "recall": true,
+  "vram_peak_mib": 71366,
+  "error": null
+ },
+ {
+  "target": 131072,
+  "prompt_tokens": 134941,
+  "completion_tokens": 512,
+  "ttft_s": 27.28,
+  "prefill_tok_s": 4946,
+  "decode_tok_s": 143.1,
+  "accept_length": 2.68,
+  "recall": true,
+  "vram_peak_mib": 72434,
+  "error": null
+ }
+]
