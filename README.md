@@ -63,7 +63,7 @@ decoding, image input) on guqiong96/Lsglang, with the CPU-side routed experts on
    ```
 2. Python 3.12 虚拟环境（`/opt/Lsglang/env`），按 Lsglang v1.4.12 的 wheel 发布包安装，版本见 `requirements-lock.txt`
    （torch 2.13.0、triton 3.7.1、flashinfer 0.6.17、transformers 5.12.1）。
-   **`lk_moe` 2.4.3 需要另外安装**（Lsglang 作者发布的闭源库，本仓库不再分发；MoE 计算由 lkqmoe 负责）。
+   **不需要安装 `lk_moe`**：`LKQMOE_MODE=standalone` 时 lkqmoe 直接提供 `lk_moe` 模块（`MOEConfigV2`、`MOE_NVFP4`），闭源包即使装了也不会被加载。
 3. 下载模型，按需修改 `launch/run-qwen38fn-nvfp4.sh` 开头的路径，启动：
    ```sh
    bash launch/run-qwen38fn-nvfp4.sh
