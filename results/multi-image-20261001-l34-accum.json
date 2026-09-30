@@ -1,0 +1,47 @@
+[
+ {
+  "images": 1,
+  "prompt_tokens": 2086,
+  "ttft_s": 1.82,
+  "numbers_found": "1/1",
+  "answer_head": "641",
+  "vram_peak_mib": 72414,
+  "error": null
+ },
+ {
+  "images": 4,
+  "prompt_tokens": 8212,
+  "ttft_s": 3.59,
+  "numbers_found": "4/4",
+  "answer_head": "817, 630, 937, 115",
+  "vram_peak_mib": 72434,
+  "error": null
+ },
+ {
+  "images": 8,
+  "prompt_tokens": 16380,
+  "ttft_s": 7.06,
+  "numbers_found": "8/8",
+  "answer_head": "452, 230, 820, 884, 147, 760, 648, 769",
+  "vram_peak_mib": 72454,
+  "error": null
+ },
+ {
+  "images": 16,
+  "prompt_tokens": 32717,
+  "ttft_s": 13.95,
+  "numbers_found": "16/16",
+  "answer_head": "832, 132, 150, 804, 666, 461, 904, 267, 425, 834, 711, 925, 448, 909, 281, 994",
+  "vram_peak_mib": 72512,
+  "error": null
+ },
+ {
+  "images": 24,
+  "prompt_tokens": 49053,
+  "ttft_s": 20.74,
+  "numbers_found": "24/24",
+  "answer_head": "534, 856, 619, 507, 357, 233, 486, 232, 731, 848, 368, 939, 975, 493, 515, 680, 195, 178, 856, 445, 552, 722, 745, 809",
+  "vram_peak_mib": 72572,
+  "error": null
+ }
+]

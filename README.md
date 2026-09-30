@@ -29,7 +29,28 @@ decoding, image input) on guqiong96/Lsglang, with the CPU-side routed experts on
 | 存储 | NVMe |
 | 系统 | Ubuntu 24.04.4，内核 7.0.0-31，Python 3.12.3 |
 
-## 速度
+## 速度（2026-10-01，34 层 GPU 常驻）
+
+测试条件同下方 09-30 的表：单请求，温度 0，`ignore_eos`，每点输出 1024 token（含思考内容），长日志文本在 10% 深度埋一条事实并在末尾提问（`bench/speed_points.py`）。与 09-30 的区别：lkqmoe GPU 预填充改为每块 32 个专家、按块累加路由结果（见“lkqmoe”一节），省下的显存用来多放 2 层到 GPU（32 → 34）。原始数据 `results/speed-points-20261001-l34-accum.json`。
+
+| 输入 token | 首 token 时间 | 预填充 tok/s | decode tok/s | 平均接受长度 | 找回埋藏事实 | 显存峰值 |
+|---:|---:|---:|---:|---:|:---:|---:|
+| 4,109 | 0.87 s | 4,707 | 191.2 | 3.1 | 是 | 71,060 MiB |
+| 8,315 | 1.37 s | 6,051 | 211.1 | 3.29 | 是 | 71,060 MiB |
+| 17,123 | 2.63 s | 6,505 | 190.8 | 3.22 | 是 | 71,060 MiB |
+| 33,265 | 5.43 s | 6,132 | 184.1 | 3.17 | 是 | 71,062 MiB |
+| 68,103 | 11.67 s | 5,834 | 160.0 | 3.06 | 是 | 71,708 MiB |
+| 134,941 | 25.64 s | 5,263 | 163.3 | 2.98 | 是 | 71,732 MiB |
+| 210,634 | 35.11 s | 6,000 | 161.6 | 2.94 | 是 | 71,972 MiB |
+| 252,609 | 43.1 s | 5,861 | 171.4 | 2.94 | 是 | 71,972 MiB |
+
+4 类任务（`bench/mtp_speed_bench.py`，2K 输入 / 512 输出）：decode 171.4 tok/s（09-30 为 164.6），MTP 验证一步 15.87 ms（16.35），32K 冷启动首 token 4.8 s（6.2）。
+
+多图（`bench/multi_image_check.py`，每张 1920×1080 JPEG，要求按顺序读出图中编号）：1 张 1/1（2,086 token，首 token 1.82 s），4 张 4/4（8,212 token，首 token 3.59 s），8 张 8/8（16,380 token，首 token 7.06 s），16 张 16/16（32,717 token，首 token 13.95 s），24 张 24/24（49,053 token，首 token 20.74 s）；显存峰值 72,572 MiB。
+
+层数上限：37 层实测不行（KV 池被挤到 79K token，32K 分块在 GDN 线性注意力预填充处 OOM）；35、36 层未实测，按每层约 1.4 GB 估算余量会低于 0.5 GB，没有采用。预填充的显存峰值现在由 GDN 注意力决定而不是 MoE，所以 MoE 省下的约 6.6 GiB 只换来 2 层；34 层时显存峰值余量约 0.8 GB，与原 32 层（约 1.0 GB）相当。
+
+## 速度（2026-09-30，32 层 GPU 常驻）
 
 测试条件：单请求，温度 0，`ignore_eos`，每点输出 1024 token（含思考内容）；输入是长日志文本，在 10% 深度埋一条事实并在末尾提问（`bench/speed_points.py`）。MTP 开启，32 层 GPU 常驻，其余见“运行方式”。2026-09-30 用本仓库的 lkqmoe 0.4.1 包实测，原始数据 `results/speed-points-20260930.json`（0.3.2 的同类数据与三版本对比见 `results/`）。
 
@@ -49,7 +70,7 @@ decoding, image input) on guqiong96/Lsglang, with the CPU-side routed experts on
 ## 运行方式
 
 - 模型 48 层（36 层线性注意力 GDN + 12 层全注意力 QSA），MoE 512 专家 top-10（hidden 2560，专家中间维 640）。
-- 前 32 个 MoE 层常驻 GPU，其余 16 层的路由专家在 CPU（lkqmoe，64 线程）；MTP 草稿全在 GPU。
+- 前 34 个 MoE 层常驻 GPU，其余 14 层的路由专家在 CPU（lkqmoe，64 线程）；MTP 草稿全在 GPU。
 - KV 缓存 NVFP4，草稿 KV FP8；PLE（逐层嵌入）卸载到内存；32K 分块预填充；单请求并发。
 - MTP（NEXTN）：3 步、每步验证 4 个 token，草稿热词表 49152。
 
@@ -85,8 +106,9 @@ decoding, image input) on guqiong96/Lsglang, with the CPU-side routed experts on
 --speculative-token-map lkqmoe/draft-token-map-49152.pt --speculative-draft-model-quantization modelopt_mixed
 --cuda-graph-backend-decode full --cuda-graph-bs-decode 1 --reasoning-parser qwen3 --tool-call-parser qwen3_coder
 --json-model-override-args '{"text_config":{"rope_scaling":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}}}'
-LVLLM_GPU_RESIDENT_MOE_LAYERS=0-31  LK_THREADS=64  LVLLM_GPU_PREFILL_MIN_BATCH_SIZE=4096
+LVLLM_GPU_RESIDENT_MOE_LAYERS=0-33  LK_THREADS=64  LVLLM_GPU_PREFILL_MIN_BATCH_SIZE=4096
 LKQMOE_MODE=standalone  LKQMOE_ZERO_COPY=1  LKQMOE_MTP_QUANT=1  LKQMOE_MTP_ROUTER_GUARD=1  LKQMOE_PREFILL_PREFETCH=1
+LKQMOE_PREFILL_EXPERT_CHUNK=32  LKQMOE_PREFILL_ROUTE_ACCUM=1
 ```
 完整列表见 `launch/run-qwen38fn-nvfp4.sh`。
 
@@ -98,12 +120,14 @@ LKQMOE_MODE=standalone  LKQMOE_ZERO_COPY=1  LKQMOE_MTP_QUANT=1  LKQMOE_MTP_ROUTE
   `python/lkqmoe/gpu/router_dependency.py`（MTP 路由的生产者/消费者依赖保护）。
 - 二进制许可见 `lkqmoe/LICENSE`：可免费使用、原样再分发；源码不公开。
 - Qwen 走 FP32 数值路径：0.4.1 与此前生产验证过的 0.3.2 在 118 个真实权重用例上逐位一致。同机同时段对比 0.3.2：MTP 验证步 16.69 → 16.35 ms，decode 160.0 → 164.6 tok/s，2K 输入首 token 缩短 10–22%（CPU 预填充按 8 token 分组），长输入预填充 +1–2%。
+- GPU 预填充按块累加（2026-10-01，`LKQMOE_PREFILL_EXPERT_CHUNK=32 LKQMOE_PREFILL_ROUTE_ACCUM=1`）：专家权重每 32 个一块上传，每块的路由结果立即按 FP32 加进逐 token 累加缓冲，不再为整个分块保留 [token×10, 2560] 的路由缓冲。真实权重单层（32K token）：工作区 7.8 → 1.1 GiB，耗时 100.6 → 71.5 ms（上传与计算重叠）；对 FP64 参考的误差不变（1.66e-3），99.995% 的输出与原算法逐位相同，其余只差 FP32 加法顺序。关掉这两个变量即恢复原算法（逐位一致）。
 - 硬件要求：x86-64 AVX512-BF16，4 个 NUMA 节点 × 16 物理核（其他拓扑未验证），CUDA GPU。
 
 ## 测试脚本（`bench/`）
 
 - `speed_points.py`：任意长度打点测速（本页速度表）。
 - `mtp_speed_bench.py`：4 类任务 2K 输入 / 512 输出的 MTP 速度，加一次 32K 冷启动首 token 时间。
+- `multi_image_check.py`：多图请求（N 张带编号的截图，要求按顺序读出编号），记录首 token 时间与显存峰值。
 - `build_token_map.py`：从实际输出生成草稿热词表。
 
 ## 许可
