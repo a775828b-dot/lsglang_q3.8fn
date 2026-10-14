@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Qwen3.8 Flash Next NVFP4 + MTP (NEXTN) on one RTX PRO 5000 72GB (SM120) + 2x EPYC 9334 (4 NUMA nodes).
-# 32 MoE layers on the GPU; routed experts of the remaining layers run on lkqmoe (compiled, ../lkqmoe).
+# Routed experts of the CPU MoE layers run on lkqmoe (compiled, ../lkqmoe); with LKQstrata their hot experts
+# also get GPU slots (lkqmoe 0.5.0 expert pool).
 # This is the launch used for the measurements in README.md; edit the paths block first.
 set -Eeuo pipefail
 
@@ -11,6 +12,18 @@ VENV=${VENV:-$LSGLANG/env}            # python 3.12, see README "Environment"
 MODEL=${MODEL:-/models/lovedheart/Qwen3.8-Flash-Next-NVFP4-W4A16-ATTN-FP8-MTP-NVFP4}
 PORT=${PORT:-18080}
 STATS_DIR=${STATS_DIR:-$REPO/run/lkqmoe-stats}
+
+# ---- layout -----------------------------------------------------------------------------
+# LKQstrata (default, 512K + 2 concurrent requests): model layer 0 (its id is shared by the MTP draft layer) and the
+# 24 layers the expert pool helps least stay whole on the GPU; each of the other 23 MoE layers runs on lkqmoe with
+# 155 GPU slots for its hot experts (ranking profile + adaptive LFU swaps, 32 per decode window).
+# Previous release (classic): LKQSTRATA=0 RESIDENT=0-33 CONTEXT=262144 MAX_REQUESTS=1.
+RESIDENT=${RESIDENT:-0,1,2,5,6,7,8,10,11,12,13,14,17,18,19,20,21,22,26,28,29,33,34,37,38}
+LKQSTRATA=${LKQSTRATA:-1}
+LKQSTRATA_SLOTS=${LKQSTRATA_SLOTS:-155}
+LKQSTRATA_SWAPS=${LKQSTRATA_SWAPS:-32}
+CONTEXT=${CONTEXT:-524288}
+MAX_REQUESTS=${MAX_REQUESTS:-2}
 
 cuda_root="$VENV/lib/python3.12/site-packages/nvidia/cu13"
 lkq="$REPO/lkqmoe"
@@ -41,8 +54,10 @@ exec env \
   LVLLM_ENABLE_NUMA_INTERLEAVE=1 LK_THREADS=64 OMP_NUM_THREADS=1 \
   LK_THREAD_BINDING=CPU_CORE LK_POWER_SAVING=1 \
   LVLLM_GPU_PREFETCH_WINDOW=1 LVLLM_GPU_PREFILL_MIN_BATCH_SIZE=4096 \
-  LVLLM_GPU_RESIDENT_MOE_LAYERS=0-33 \
+  LVLLM_GPU_RESIDENT_MOE_LAYERS="$RESIDENT" \
   LVLLM_GPU_RESIDENT_MOE_LAYERS_DSPARK=0 \
+  LKQSTRATA="$LKQSTRATA" LKQSTRATA_SLOTS="$LKQSTRATA_SLOTS" LKQSTRATA_SWAPS="$LKQSTRATA_SWAPS" \
+  LKQSTRATA_PROFILE="$lkq/lkqstrata-qwen38.json" \
   FLASHINFER_DISABLE_VERSION_CHECK=1 \
   XDG_CACHE_HOME="$REPO/run/cache" \
   "$VENV/bin/sglang" serve \
@@ -51,7 +66,7 @@ exec env \
     --host 127.0.0.1 --port "$PORT" --trust-remote-code \
     --tp-size 1 \
     --weight-loader-drop-cache-after-load \
-    --context-length 262144 --max-running-requests 1 --max-total-tokens 262144 \
+    --context-length "$CONTEXT" --max-running-requests "$MAX_REQUESTS" --max-total-tokens "$CONTEXT" \
     --json-model-override-args '{"text_config":{"rope_scaling":{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}}}' \
     --chunked-prefill-size 32768 --mem-fraction-static 0.90 --page-size 64 \
     --quantization modelopt_mixed --moe-runner-backend flashinfer_cutlass \
@@ -67,8 +82,8 @@ exec env \
     --speculative-num-draft-tokens 4 --speculative-token-map "$lkq/draft-token-map-49152.pt" \
     --speculative-draft-model-quantization modelopt_mixed \
     --disable-flashinfer-autotune \
-    --cuda-graph-backend-decode full --cuda-graph-max-bs-decode 1 \
-    --cuda-graph-bs-decode 1 --cuda-graph-backend-prefill disabled \
+    --cuda-graph-backend-decode full --cuda-graph-max-bs-decode "$MAX_REQUESTS" \
+    --cuda-graph-bs-decode $(seq -s " " 1 "$MAX_REQUESTS") --cuda-graph-backend-prefill disabled \
     --image-processor-backend pil \
     --reasoning-parser qwen3 --tool-call-parser qwen3_coder \
     --watchdog-timeout 1200 --enable-metrics \
