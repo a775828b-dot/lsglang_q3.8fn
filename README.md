@@ -122,14 +122,15 @@ LKQSTRATA=1  LKQSTRATA_SLOTS=155  LKQSTRATA_SWAPS=32  LKQSTRATA_PROFILE=lkqmoe/l
 
 ## lkqmoe（`lkqmoe/`）
 
-- 编译版 0.5.0：`liblkqmoe.so`（CPU 内核）、`liblkqmoe_cuda.so`（CUDA 信箱桥与热专家池的换入换出）、`python/lkqmoe/*.pyc`（lsglang
+- 编译版 0.5.2：`liblkqmoe.so`（CPU 内核）、`liblkqmoe_cuda.so`（CUDA 信箱桥与热专家池的换入换出）、`python/lkqmoe/*.pyc`（lsglang
   适配层、Triton GPU 预填充、LKQstrata 热专家池；含 Triton 内核的模块内嵌压缩源码，因为 Triton 编译时要读源码）。许可见
   `lkqmoe/LICENSE`：可免费使用、原样再分发。
+- 版本 0.5.2（2026-10-16）：CPU 内核按 NUMA 拓扑自动分配——从系统读取每个有 CPU 的 NUMA 节点（本机 NPS2 为 4 个、NPS4 为 8 个），每个节点存每个专家 1/N 的行，线程先用该节点的物理核、再用其 SMT 兄弟线程，不再写死 4 节点 × 16 核。`LKQMOE_MAIN_CPUS=auto` 自动取“允许的 CPU − 专家线程 − 信箱调度线程”，换拓扑或线程数不用手改列表。本机（NPS2）上绑核与 0.5.0 完全相同；三个模型的实权重单层在 64 / 112 线程、默认与生产开关、m = 1…2048 下输出与 0.5.0 逐位相同，速度持平；在本机把每个节点拆成两半模拟 NPS4 的 8 节点布局，输出同样逐位相同。启动日志会打印 `[lkqmoe] N worker nodes ...`。
 - 开源部分（Apache-2.0）：`python/sitecustomize.py`、`python/lkqmoe/gpu/mtp_quant.py`（MTP 草稿保留 NVFP4，省约 2.9 GB 显存）、
   `python/lkqmoe/gpu/router_dependency.py`（MTP 路由的生产者/消费者依赖保护）。
 - 精度：CPU 专家走 FP32 数值路径；热专家池的 GPU 部分是 W4A16（硬件 FP4→FP16，FP32 累加，BF16 中间结果），与常驻层同一精度；
   GPU 预填充对 FP64 参考的误差 1.66e-3。`LKQSTRATA=0` 时与上一版（0.4.1）在 118 个用例上逐位相同。
-- 硬件要求：x86-64 AVX512-BF16，4 个 NUMA 节点 × 16 物理核（其他拓扑未验证），CUDA GPU。
+- 硬件要求：x86-64 AVX512-BF16，NUMA 拓扑自动识别（已验证 NPS2 的 4 节点 × 16 核，NPS4 的 8 节点 × 8 核在本机模拟验证；hidden / intermediate 须是 16 × 节点数的倍数）。启动脚本里的 `LKQMOE_MAIN_CPUS` 列表按本机 NPS2 写好，换到其他拓扑时改成 `auto`，CUDA GPU。
 
 ## 测试脚本（`bench/`）
 
