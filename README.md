@@ -122,15 +122,35 @@ LKQSTRATA=1  LKQSTRATA_SLOTS=155  LKQSTRATA_SWAPS=32  LKQSTRATA_PROFILE=lkqmoe/l
 
 ## lkqmoe（`lkqmoe/`）
 
-- 编译版 0.5.2：`liblkqmoe.so`（CPU 内核）、`liblkqmoe_cuda.so`（CUDA 信箱桥与热专家池的换入换出）、`python/lkqmoe/*.pyc`（lsglang
+- 编译版 0.5.3：`liblkqmoe.so`（分发库）+ `liblkqmoe_avx512.so` / `liblkqmoe_avx2.so`（CPU 内核）、`liblkqmoe_cuda.so`（CUDA 信箱桥与热专家池的换入换出）、`python/lkqmoe/*.pyc`（lsglang
   适配层、Triton GPU 预填充、LKQstrata 热专家池；含 Triton 内核的模块内嵌压缩源码，因为 Triton 编译时要读源码）。许可见
   `lkqmoe/LICENSE`：可免费使用、原样再分发。
+- 版本 0.5.3（2026-10-17）：**同时支持只有 AVX2 的 CPU 和多卡张量并行（TP）**。
+  - 指令集：`liblkqmoe.so` 启动时检测 CPU，有 AVX512-BF16/VBMI（Zen4、Sapphire Rapids 等）就加载 `liblkqmoe_avx512.so`，
+    只有 AVX2/FMA（Zen2、Zen3 等）就加载 `liblkqmoe_avx2.so`，三个文件放在同一目录；启动日志打印 `[lkqmoe] CPU kernels: avx512`
+    或 `avx2`，`LKQMOE_ISA=avx2` 可强制（例如在 AVX-512 机器上测 AVX2 路径）。AVX-512 路径与 0.5.2 逐位相同、速度持平
+    （三个模型的实权重单层，64 / 112 线程，m = 1…2048）。AVX2 内核按 Zen2 优化（`vpshufb` 查表、每步 32 个权重），FP32 累加，
+    误差与 AVX-512 同量级；同一输入在 Zen2 与 Zen4 上的 AVX2 输出逐位相同。
+  - 张量并行：每个 TP rank 一个进程，各自持有每个专家 1/tp 的中间维，部分和由框架原有的 all-reduce 相加，CPU 侧不需要跨进程通信。
+    `LKQMOE_TP_NODES=auto` 让每个 rank 只用其 GPU 所在 CPU 的 NUMA 节点（权重读本地内存）、并各自挑选信箱调度线程与主线程
+    （也可按 rank 写，如 `0-3|4-7`）；`LKQMOE_THREADS` 按每个 rank 计。LKQstrata 热专家池在每张卡上各存半个专家。
+  - 本管线验证：本机（AVX-512）换 0.5.3 后，关闭热专家池自适应时 PPL 3.4709（生产版 0.5.0 为 3.4721；开着自适应时两次启动之间差 0.2–0.4%，来自池内专家不同），500K 首 token 106.0 s、decode 200.3 tok/s，埋藏事实召回。**AVX2 主机和多卡 TP 没有在本管线上测试**（内核与 lsglang_glm5.3 是同一份二进制，GLM-5.3 有 AVX2 + TP2 实测）。
 - 版本 0.5.2（2026-10-16）：CPU 内核按 NUMA 拓扑自动分配——从系统读取每个有 CPU 的 NUMA 节点（本机 NPS2 为 4 个、NPS4 为 8 个），每个节点存每个专家 1/N 的行，线程先用该节点的物理核、再用其 SMT 兄弟线程，不再写死 4 节点 × 16 核。`LKQMOE_MAIN_CPUS=auto` 自动取“允许的 CPU − 专家线程 − 信箱调度线程”，换拓扑或线程数不用手改列表。本机（NPS2）上绑核与 0.5.0 完全相同；三个模型的实权重单层在 64 / 112 线程、默认与生产开关、m = 1…2048 下输出与 0.5.0 逐位相同，速度持平；在本机把每个节点拆成两半模拟 NPS4 的 8 节点布局，输出同样逐位相同。启动日志会打印 `[lkqmoe] N worker nodes ...`。
 - 开源部分（Apache-2.0）：`python/sitecustomize.py`、`python/lkqmoe/gpu/mtp_quant.py`（MTP 草稿保留 NVFP4，省约 2.9 GB 显存）、
   `python/lkqmoe/gpu/router_dependency.py`（MTP 路由的生产者/消费者依赖保护）。
 - 精度：CPU 专家走 FP32 数值路径；热专家池的 GPU 部分是 W4A16（硬件 FP4→FP16，FP32 累加，BF16 中间结果），与常驻层同一精度；
   GPU 预填充对 FP64 参考的误差 1.66e-3。`LKQSTRATA=0` 时与上一版（0.4.1）在 118 个用例上逐位相同。
-- 硬件要求：x86-64 AVX512-BF16，NUMA 拓扑自动识别（已验证 NPS2 的 4 节点 × 16 核，NPS4 的 8 节点 × 8 核在本机模拟验证；hidden / intermediate 须是 16 × 节点数的倍数）。启动脚本里的 `LKQMOE_MAIN_CPUS` 列表按本机 NPS2 写好，换到其他拓扑时改成 `auto`，CUDA GPU。
+- 硬件要求：x86-64，AVX512-BF16/VBMI 或 AVX2/FMA（运行时自动选择），NUMA 拓扑自动识别（已验证 NPS2 的 4 节点 × 16 核，NPS4 的 8 节点 × 8 核在本机模拟验证；hidden / intermediate 须是 16 × 节点数的倍数）。启动脚本里的 `LKQMOE_MAIN_CPUS` 列表按本机 NPS2 写好，换到其他拓扑时改成 `auto`，CUDA GPU。
+
+- AVX2 / 多卡使用建议：
+  - 只有 AVX2 的 CPU 上专家计算更慢（同一台 Zen4 上实权重单层的 AVX2 路径约慢 1.4–1.6 倍），decode 更依赖热专家池，显存允许时多给槽位；
+    `LKQMOE_THREADS` 取“每个 NUMA 节点的物理核数 − 1”乘节点数，留出信箱调度线程和主线程。
+  - 多卡：设 `LKQMOE_TP_NODES=auto` 与 `LKQMOE_MAIN_CPUS=auto`，去掉写死的 `LKQMOE_PROBE_DISPATCH_CPU`；
+    每张卡对应的 NUMA 节点最好属于同一颗 CPU（`nvidia-smi topo -m` 可查）。消费级卡之间没有 P2P，加 `--disable-custom-all-reduce`。
+  - TP 下草稿热词表（`--speculative-token-map`）不能用：草稿 lm_head 按完整词表的 id 从目标 lm_head 取行，而 TP 下每个 rank
+    只有自己那一半词表，会越界；去掉后草稿直接共用目标 lm_head，投机解码仍然无损。
+  - lkqmoe 的 GPU 预填充每个分块都要把全部专家权重传到 GPU，PCIe 4.0 主机上 prefill 速度大致与分块大小成正比，显存不够时
+    可减小 `LKQMOE_PREFILL_EXPERT_CHUNK` 和 DSA/索引器类的分块参数来换更大的预填充分块。
 
 ## 测试脚本（`bench/`）
 
