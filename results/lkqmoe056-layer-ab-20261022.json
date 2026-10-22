@@ -1,0 +1,91 @@
+{
+ "date": "2026-10-22",
+ "method": "pool-research/numa/numa_ab.py: one real MoE layer, seeded routes, output digests (sha256 of every case's float32 output) and mean us per call; two interleaved repetitions; 24 channels, NPS4",
+ "configs": [
+  {
+   "library": "lkqmoe 0.5.0 (previous release build)",
+   "threads": 64,
+   "numa_nodes_used": 4,
+   "bitwise_equal_to_0_5_0": true,
+   "us_per_call": {
+    "m1-indep": 142.6,
+    "m2-indep": 447.4,
+    "m4-indep": 1009.5,
+    "m4-verify": 515.1,
+    "m8-indep": 1592.3,
+    "m8-verify2": 827.9,
+    "m64-indep": 6865.2,
+    "m512-indep": 16453.8,
+    "m2048-indep": 55570.1
+   }
+  },
+  {
+   "library": "lkqmoe 0.5.6, LKQMOE_DOWN_R4=1 build (this repository)",
+   "threads": 64,
+   "numa_nodes_used": 8,
+   "bitwise_equal_to_0_5_0": true,
+   "us_per_call": {
+    "m1-indep": 79.4,
+    "m2-indep": 152.5,
+    "m4-indep": 301.3,
+    "m4-verify": 198.7,
+    "m8-indep": 589.6,
+    "m8-verify2": 364.5,
+    "m64-indep": 3463.9,
+    "m512-indep": 13259.8,
+    "m2048-indep": 53450.7
+   }
+  },
+  {
+   "library": "lkqmoe 0.5.6, LKQMOE_DOWN_R4=1 build (this repository)",
+   "threads": 112,
+   "numa_nodes_used": 8,
+   "bitwise_equal_to_0_5_0": true,
+   "us_per_call": {
+    "m1-indep": 65.3,
+    "m2-indep": 125.3,
+    "m4-indep": 248.7,
+    "m4-verify": 153.2,
+    "m8-indep": 492.8,
+    "m8-verify2": 286.4,
+    "m64-indep": 2871.2,
+    "m512-indep": 11772.0,
+    "m2048-indep": 47659.6
+   }
+  },
+  {
+   "library": "lkqmoe 0.5.6, LKQMOE_DOWN_R4=4 build",
+   "threads": 64,
+   "numa_nodes_used": 8,
+   "bitwise_equal_to_0_5_0": true,
+   "us_per_call": {
+    "m1-indep": 91.2,
+    "m2-indep": 173.6,
+    "m4-indep": 336.4,
+    "m4-verify": 220.3,
+    "m8-indep": 659.2,
+    "m8-verify2": 391.9,
+    "m64-indep": 3598.8,
+    "m512-indep": 13013.5,
+    "m2048-indep": 52328.4
+   }
+  },
+  {
+   "library": "lkqmoe 0.5.6, LKQMOE_DOWN_R4=4 build",
+   "threads": 112,
+   "numa_nodes_used": 8,
+   "bitwise_equal_to_0_5_0": true,
+   "us_per_call": {
+    "m1-indep": 67.7,
+    "m2-indep": 132.1,
+    "m4-indep": 253.2,
+    "m4-verify": 158.4,
+    "m8-indep": 516.8,
+    "m8-verify2": 297.8,
+    "m64-indep": 3037.2,
+    "m512-indep": 11713.3,
+    "m2048-indep": 47380.4
+   }
+  }
+ ]
+}
