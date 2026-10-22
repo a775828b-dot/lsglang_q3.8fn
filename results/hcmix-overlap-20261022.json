@@ -1,0 +1,69 @@
+{
+ "date": "2026-10-22",
+ "gpu": "NVIDIA RTX PRO 5000 72GB Blackwell (110 SMs)",
+ "shapes": {
+  "hc": 4,
+  "hidden": 2560,
+  "lowrank": 320,
+  "weights": "BF16, 96 layer branches rotated (cold L2)"
+ },
+ "us_per_call": {
+  "original": {
+   "1": 16.227883100509644,
+   "2": 16.23658339182536,
+   "4": 16.292200485865276,
+   "8": 16.3762499888738,
+   "12": 16.517866651217144,
+   "16": 16.62808358669281
+  },
+  "overlap": {
+   "1": 13.381033142407736,
+   "2": 13.406899571418762,
+   "4": 13.443683584531149,
+   "8": 13.531750440597534,
+   "12": 13.672049840291342,
+   "16": 13.776933153470358
+  },
+  "stream_read_same_bytes": 11.8
+ },
+ "max_err_vs_fp64": {
+  "original": 0.003906258200436774,
+  "overlap": 0.003906258200436774
+ },
+ "stress": {
+  "limit": 0.005859387300655161,
+  "eager_calls": 3000,
+  "eager_worst": 0.003906258200436774,
+  "eager_over": 0,
+  "graph_checks": 19200,
+  "graph_worst": 0.0039045537400912433,
+  "graph_over": 0
+ },
+ "model_ab": {
+  "config": "512K / 2-request launcher, single-request decode, 20 prompts x temperature 0 / 0.7, one load each",
+  "original": {
+   "decode_tps": 161.81914594317712,
+   "ms_per_step": 14.006686013341328,
+   "accept": 2.26973265436028
+  },
+  "overlap": {
+   "decode_tps": 162.16128960642405,
+   "ms_per_step": 13.776863543716109,
+   "accept": 2.2371814791796147
+  },
+  "paired_ms_per_step": "-1.69% (95% CI -1.97% .. -1.21%)",
+  "ppl": {
+   "original": 3.4857,
+   "overlap": 3.48
+  },
+  "copy_test": "0/8 and 0/8 (one / two at a time) for both, first-line indentation ignored"
+ },
+ "webui_start": {
+  "summary": {
+   "decode_tps": 163.28252518062163,
+   "ms_per_step": 13.746820131270292,
+   "accept": 2.2477256822953113
+  },
+  "copy_test": "0/8, 0/8"
+ }
+}

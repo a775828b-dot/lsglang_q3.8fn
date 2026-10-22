@@ -15,6 +15,8 @@ details in `reports/`.*
 
 ## 版本更新
 
+- **2026-10-22（晚）**：hc_mix 重叠内核（`SGLANG_HC_MIX_OVERLAP=1`，两个启动脚本已打开；需要 sm_90 及以上，更老的卡自动用原内核）：
+  每次调用 16.3 → 13.4 µs，单请求每个验证步 −1.7%，PPL 与照抄测试无差。详见 [reports/2026-10-22-hcmix-overlap.md](reports/2026-10-22-hcmix-overlap.md)。
 - **2026-10-22**：lkqmoe 0.5.6（与 lsglang_ds4.1 同一份编译版）；内存补满 24 通道、BIOS 改 NPS4，新增 `launch/run-qwen38fn-nvfp4-24ch-nps4.sh`
   （112 线程、`LKQMOE_MAIN_CPUS=auto`）。decode 受 GPU 限制，按每步耗时与上一版持平。详见 [reports/2026-10-22-24ch-nps4-lkqmoe056.md](reports/2026-10-22-24ch-nps4-lkqmoe056.md)。
 - **2026-10-17**：lkqmoe 0.5.3：只有 AVX2 的 CPU 与多卡张量并行。详见 [reports/2026-10-17-lkqmoe053-avx2-tp.md](reports/2026-10-17-lkqmoe053-avx2-tp.md)。
@@ -30,7 +32,7 @@ details in `reports/`.*
 | 部分 | 来源 | 本仓库内容 |
 |---|---|---|
 | 模型 | [lovedheart/Qwen3.8-Flash-Next-NVFP4-W4A16-ATTN-FP8-MTP-NVFP4](https://huggingface.co/lovedheart/Qwen3.8-Flash-Next-NVFP4-W4A16-ATTN-FP8-MTP-NVFP4)：lovedheart 对 Qwen 团队 **Qwen3.8 Flash Next** 的量化版（专家 NVFP4 W4A16，注意力 FP8，MTP 草稿专家 NVFP4），121 GB | — |
-| 推理框架 | guqiong96/Lsglang v1.4.12 @ [`c49d8f3703`](https://github.com/guqiong96/Lsglang/commit/c49d8f3703b1b829d0eedbd53f2a4c2443fa8800)；Qwen3.8 支持来自 sglang PR #36497（Qiaolin-Yu, "Introduce Qwen 3.8 Flash Next"），另有本地调试修改与验证过的 Split-K | `patches/lsglang-c49d8f37-qwen38fn.patch` |
+| 推理框架 | guqiong96/Lsglang v1.4.12 @ [`c49d8f3703`](https://github.com/guqiong96/Lsglang/commit/c49d8f3703b1b829d0eedbd53f2a4c2443fa8800)；Qwen3.8 支持来自 sglang PR #36497（Qiaolin-Yu, "Introduce Qwen 3.8 Flash Next"），另有本地调试修改、验证过的 Split-K 与 hc_mix 重叠内核 | `patches/lsglang-c49d8f37-qwen38fn.patch` |
 | CPU 专家内核 | **lkqmoe**（闭源，编译版）：受 lk_moe 启发、针对 NVFP4 格式专项加速的 CPU/GPU 混合 MoE 内核。lk_moe 来自 lsglang 作者 guqiong96（[guqiong96/Lsglang](https://github.com/guqiong96/Lsglang)）；lkqmoe 独立实现其 `MOE_NVFP4` 接口，不含 lk_moe 代码。0.5.0 起含 **LKQstrata 热专家池**：GPU 上缓存每层的热门专家，换入换出策略参考 [Strata](https://github.com/Niko1221/Strata)（MIT，独立实现） | `lkqmoe/` |
 | 热专家池排名表 | 从 Qwen 实际 decode 路由统计的每层专家使用排名（52 个请求：中英文、代码、数学、agent 排错等短提示，约 11 万 token 的长文问答，5 轮编程对话；温度 1.0）；启动时按它装填，之后自适应 | `lkqmoe/lkqstrata-qwen38.json` |
 | MTP 草稿热词表 | 从实际输出统计的 49152 个高频 token（只影响草稿接受率，目标模型仍验证每个 token） | `lkqmoe/draft-token-map-49152.pt` |

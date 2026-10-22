@@ -4406,8 +4406,8 @@ diff -ruN base/python/sglang/srt/disaggregation/utils.py final/python/sglang/srt
  
 diff -ruN base/python/sglang/srt/environ.py final/python/sglang/srt/environ.py
 --- a/python/sglang/srt/environ.py	2026-08-25 23:12:04.000000000 +0800
-+++ b/python/sglang/srt/environ.py	2026-09-23 21:24:06.000000000 +0800
-@@ -288,6 +288,42 @@
++++ b/python/sglang/srt/environ.py	2026-10-22 21:29:40.221843731 +0800
+@@ -288,6 +288,46 @@
      #        keeping access relatively ordered.
      SGLANG_SORT_WEIGHT_FILES = EnvInt(0)
      SGLANG_DISABLED_MODEL_ARCHS = EnvTuple(tuple())
@@ -4431,6 +4431,10 @@ diff -ruN base/python/sglang/srt/environ.py final/python/sglang/srt/environ.py
 +    # fall back to the plain-torch mix without enabling full deterministic
 +    # inference.
 +    SGLANG_HC_MIX_TRITON = EnvBool(True)
++    # Run the decode HC mix as the overlapped persistent kernel (one grid
++    # barrier, W_up streamed into L2 while the barrier is pending); needs
++    # sm_90 or newer, older GPUs keep the original kernel.
++    SGLANG_HC_MIX_OVERLAP = EnvBool(False)
 +    # Fuse the QSA FP4 decode gather (row index_selects + whole-row dequant
 +    # + packed-scratch repack) into one Triton kernel reading the packed pool
 +    # directly; 0 keeps the multi-kernel path.
@@ -4450,7 +4454,7 @@ diff -ruN base/python/sglang/srt/environ.py final/python/sglang/srt/environ.py
      SGLANG_PREFETCH_BLOCK_SIZE_MB = EnvInt(16)
      SGLANG_GEMMA_OUT_OF_PLACE_POSITION_MUTATION = EnvBool(False)
      SGLANG_ENABLE_WEIGHT_LOADER_V2 = EnvBool(False)
-@@ -959,6 +995,16 @@
+@@ -959,6 +999,16 @@
      # DeepGEMM
      # ===================================================================
      SGLANG_ENABLE_JIT_DEEPGEMM = EnvBool(True)
@@ -10777,8 +10781,8 @@ diff -ruN base/python/sglang/srt/layers/attention/qwen_sparse_attn_backend.py fi
 +]
 diff -ruN base/python/sglang/srt/layers/hc_mix_triton.py final/python/sglang/srt/layers/hc_mix_triton.py
 --- a/python/sglang/srt/layers/hc_mix_triton.py	1970-01-01 08:00:00.000000000 +0800
-+++ b/python/sglang/srt/layers/hc_mix_triton.py	2026-09-23 17:11:03.000000000 +0800
-@@ -0,0 +1,249 @@
++++ b/python/sglang/srt/layers/hc_mix_triton.py	2026-10-22 21:29:40.199746444 +0800
+@@ -0,0 +1,484 @@
 +"""Fused HC low-rank mix for decode-size batches.
 +
 +`GatedResidual._mix_compute` lowers to a five-kernel chain per call
@@ -10800,6 +10804,25 @@ diff -ruN base/python/sglang/srt/layers/hc_mix_triton.py final/python/sglang/srt
 +
 +The barrier counters are reset by the last CTA to finish, so a captured
 +CUDA graph replays with the buffers back in their initial state.
++
++``SGLANG_HC_MIX_OVERLAP`` switches to ``_hc_mix_overlap_kernel``, which
++keeps DRAM streaming where the kernel above waits on its barriers (RTX PRO
++5000, 110 SMs, Qwen3.8 shapes: 16.3 -> 13.4 us per call at 4 rows, against
++11.8 us for streaming the two weight matrices alone):
++
++* no zeroing pass and no first barrier: the accumulator is a persistent
++  pair, ``state[3]`` names the one that is zero on entry, and each call
++  zeroes the other one after its phase B for the next call;
++* each CTA starts a TMA bulk prefetch of its own phase-B block of ``W_up``
++  into L2 as soon as its phase-A tiles are issued, so ``W_up`` streams while
++  the slower CTAs finish phase A and while everyone waits at the barrier;
++* phase-A tiles walk along K, so the CTAs of one round read contiguous rows
++  of ``W_down``;
++* the barrier counter alternates with the parity and CTA 0 clears the other
++  one once every CTA has arrived, so there is no end-of-kernel ticket; CTAs
++  without a phase-B block arrive and leave.
++
++The summation order of the atomics varies across replays in both kernels.
 +
 +Row counts beyond ``_FUSED_MIX_MAX_ROWS`` (prefill) keep the
 +torch.compile path, which uses proper GEMM kernels.
@@ -10935,6 +10958,152 @@ diff -ruN base/python/sglang/srt/layers/hc_mix_triton.py final/python/sglang/srt
 +        tl.store(counters_ptr + 2, 0)
 +
 +
++@triton.jit
++def _bulk_prefetch_l2(ptrs, nbytes, pred):
++    # One TMA bulk prefetch into L2 per element whose pred is nonzero.
++    tl.inline_asm_elementwise(
++        "{\n\t.reg .pred p;\n\tsetp.ne.b32 p, $3, 0;\n\t"
++        "@p cp.async.bulk.prefetch.L2.global [$1], $2;\n\tmov.u32 $0, 0;\n\t}",
++        "=r,l,r,r",
++        [ptrs, nbytes, pred],
++        dtype=tl.int32,
++        is_pure=False,
++        pack=1,
++    )
++
++
++@triton.jit
++def _hc_mix_overlap_kernel(
++    x_ptr,
++    w_down_ptr,
++    w_up_ptr,
++    acc_pair_ptr,
++    out_ptr,
++    state_ptr,
++    K,
++    LOWRANK,
++    HS,
++    num_rows,
++    num_ctas,
++    inv_hc,
++    ROWS: tl.constexpr,
++    HC: tl.constexpr,
++    BLOCK_N: tl.constexpr,
++    BLOCK_K: tl.constexpr,
++    BLOCK_J: tl.constexpr,
++    BLOCK_R: tl.constexpr,
++    PF_BYTES: tl.constexpr,
++    PF_LANES: tl.constexpr,
++):
++    pid = tl.program_id(0)
++    offs_m = tl.arange(0, ROWS)
++    mask_m = offs_m < num_rows
++    span = ROWS * LOWRANK
++    parity = tl.load(state_ptr + 3)
++    acc_ptr = acc_pair_ptr + parity * span
++    spare_ptr = acc_pair_ptr + (1 - parity) * span
++    j_blocks = tl.cdiv(HS, BLOCK_J)
++
++    offs_k = tl.arange(0, BLOCK_K)
++    offs_n = tl.arange(0, BLOCK_N)
++    k_chunks = tl.cdiv(K, BLOCK_K)
++    for tile in range(pid, tl.cdiv(LOWRANK, BLOCK_N) * k_chunks, num_ctas):
++        n = (tile // k_chunks) * BLOCK_N + offs_n
++        k = (tile % k_chunks) * BLOCK_K + offs_k
++        mask_n = n < LOWRANK
++        xt = tl.load(
++            x_ptr + offs_m[:, None] * K + k[None, :],
++            mask=mask_m[:, None],
++            other=0.0,
++        )
++        w = tl.load(
++            w_down_ptr + n[:, None] * K + k[None, :],
++            mask=mask_n[:, None],
++            other=0.0,
++        )
++        tl.atomic_add(
++            acc_ptr + offs_m[:, None] * LOWRANK + n[None, :],
++            tl.dot(xt, tl.trans(w)),
++            mask=mask_m[:, None] & mask_n[None, :],
++            sem="relaxed",
++            scope="gpu",
++        )
++
++    # The HC row groups of this CTA's first phase-B block are contiguous runs
++    # of BLOCK_J * LOWRANK elements; one PF_BYTES request per lane.
++    lane = tl.arange(0, PF_LANES)
++    per_group = BLOCK_J * LOWRANK * 2 // PF_BYTES
++    _bulk_prefetch_l2(
++        w_up_ptr
++        + ((lane // per_group) * HS + pid * BLOCK_J) * LOWRANK
++        + (lane % per_group) * (PF_BYTES // 2),
++        tl.full((PF_LANES,), PF_BYTES, tl.int32),
++        ((lane < HC * per_group) & (pid < j_blocks)).to(tl.int32),
++    )
++
++    # Join the warps so every atomic is issued before the arrival.
++    tl.debug_barrier()
++    bar_ptr = state_ptr + parity
++    tl.atomic_add(bar_ptr, 1, sem="acq_rel", scope="gpu")
++    if pid < j_blocks:
++        while tl.atomic_add(bar_ptr, 0, sem="acq_rel", scope="gpu") < num_ctas:
++            pass
++    if pid == 0:
++        # Every CTA has arrived, so every CTA has read the parity.
++        tl.store(state_ptr + (1 - parity), 0)
++        tl.store(state_ptr + 3, 1 - parity)
++
++    offs_j = tl.arange(0, BLOCK_J)
++    offs_r = tl.arange(0, BLOCK_R)
++    offs_g = tl.arange(0, HC)
++    for jb in range(pid, j_blocks, num_ctas):
++        j = jb * BLOCK_J + offs_j
++        mask_j = j < HS
++        gj = offs_g[:, None] * HS + j[None, :]
++        gj_flat = tl.reshape(gj, (HC * BLOCK_J,))
++        mask_gj = tl.reshape(
++            tl.broadcast_to(mask_j[None, :], (HC, BLOCK_J)), (HC * BLOCK_J,)
++        )
++        acc = tl.zeros((ROWS, HC * BLOCK_J), dtype=tl.float32)
++        for r0 in range(0, LOWRANK, BLOCK_R):
++            r = r0 + offs_r
++            mask_r = r < LOWRANK
++            a = tl.load(
++                acc_ptr + offs_m[:, None] * LOWRANK + r[None, :],
++                mask=mask_r[None, :],
++                other=0.0,
++            )
++            a = a * inv_hc
++            t = (a * tl.sigmoid(a)).to(x_ptr.dtype.element_ty)
++            w = tl.load(
++                w_up_ptr + gj_flat[:, None] * LOWRANK + r[None, :],
++                mask=mask_gj[:, None] & mask_r[None, :],
++                other=0.0,
++            )
++            acc = tl.dot(t, tl.trans(w), acc)
++        gate = tl.sigmoid(tl.reshape(acc, (ROWS, HC, BLOCK_J)))
++        xg = tl.load(
++            x_ptr
++            + offs_m[:, None, None] * (HC * HS)
++            + offs_g[None, :, None] * HS
++            + j[None, None, :],
++            mask=mask_m[:, None, None] & mask_j[None, None, :],
++            other=0.0,
++        ).to(tl.float32)
++        out = tl.sum(gate * xg, axis=1) * inv_hc
++        tl.store(
++            out_ptr + offs_m[:, None] * HS + j[None, :],
++            out.to(out_ptr.dtype.element_ty),
++            mask=mask_m[:, None] & mask_j[None, :],
++        )
++
++    # Nothing reads the spare accumulator in this call.
++    offs_z = tl.arange(0, 256)
++    for z0 in range(pid * 256, span, num_ctas * 256):
++        idx = z0 + offs_z
++        tl.store(spare_ptr + idx, 0.0, mask=idx < span)
++
++
 +_counters_cache = {}
 +
 +
@@ -10944,6 +11113,30 @@ diff -ruN base/python/sglang/srt/layers/hc_mix_triton.py final/python/sglang/srt
 +        buf = torch.zeros(3, dtype=torch.int32, device=device)
 +        _counters_cache[device] = buf
 +    return buf
++
++
++_overlap_state_cache = {}
++
++
++def _get_overlap_state(device: torch.device, rows: int, lowrank: int):
++    # State (barrier counter per parity, unused, parity) and the accumulator
++    # pair; zeroed here, and every call leaves the pair half named by the
++    # parity zeroed and that parity's barrier counter cleared.
++    key = (device, rows, lowrank)
++    entry = _overlap_state_cache.get(key)
++    if entry is None:
++        entry = (
++            torch.zeros(4, dtype=torch.int32, device=device),
++            torch.zeros((2, rows, lowrank), dtype=torch.float32, device=device),
++        )
++        _overlap_state_cache[key] = entry
++    return entry
++
++
++def _prefetch_bytes(block_j: int, lowrank: int) -> int:
++    # Largest power of two up to 4 KB dividing one row group of a block.
++    group = block_j * lowrank * 2
++    return min(4096, group & -group)
 +
 +
 +_deterministic_inference_cached = None
@@ -10961,6 +11154,21 @@ diff -ruN base/python/sglang/srt/layers/hc_mix_triton.py final/python/sglang/srt
 +        except Exception:
 +            _deterministic_inference_cached = False
 +    return _deterministic_inference_cached
++
++
++_overlap_cached = None
++
++
++def _overlap() -> bool:
++    global _overlap_cached
++    if _overlap_cached is None:
++        from sglang.srt.environ import envs
++
++        # The TMA bulk prefetch (cp.async.bulk) needs sm_90 or newer.
++        _overlap_cached = bool(envs.SGLANG_HC_MIX_OVERLAP.get()) and (
++            torch.cuda.get_device_capability()[0] >= 9
++        )
++    return _overlap_cached
 +
 +
 +def fused_hc_mix_supported(
@@ -11000,6 +11208,37 @@ diff -ruN base/python/sglang/srt/layers/hc_mix_triton.py final/python/sglang/srt
 +    rows_pad = 16
 +    device = hyper_input_normed.device
 +    num_ctas = torch.cuda.get_device_properties(device).multi_processor_count
++    if _overlap():
++        state, acc_pair = _get_overlap_state(device, rows_pad, lowrank)
++        out = torch.empty(
++            (rows, hs), dtype=hyper_input_normed.dtype, device=device
++        )
++        if rows == 0:
++            return out
++        _hc_mix_overlap_kernel[(num_ctas,)](
++            hyper_input_normed,
++            w_down,
++            w_up,
++            acc_pair,
++            out,
++            state,
++            k,
++            lowrank,
++            hs,
++            rows,
++            num_ctas,
++            1.0 / hc,
++            ROWS=rows_pad,
++            HC=hc,
++            BLOCK_N=32,
++            BLOCK_K=256,
++            BLOCK_J=32,
++            BLOCK_R=64,
++            PF_BYTES=_prefetch_bytes(32, lowrank),
++            PF_LANES=256,
++            num_warps=8,
++        )
++        return out
 +    t_raw = torch.empty((rows_pad, lowrank), dtype=torch.float32, device=device)
 +    out = torch.empty(
 +        (rows, hs), dtype=hyper_input_normed.dtype, device=device

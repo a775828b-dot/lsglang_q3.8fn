@@ -44,6 +44,7 @@ exec env \
   PYTHONPATH="$lkq/python:$LSGLANG/python" \
   LVLLM_ENABLE_VALIDATED_SPLITK=1 \
   SGLANG_W4A16_RESIDENT_MARLIN=1 \
+  SGLANG_HC_MIX_OVERLAP=1 \
   CUDA_HOME="$cuda_root" PATH="$cuda_root/bin:$PATH" \
   LD_LIBRARY_PATH="$cuda_root/lib:${LD_LIBRARY_PATH:-}" \
   TVM_FFI_GPU_BACKEND=cuda TVM_FFI_CUDA_ARCH_LIST=12.0 \
