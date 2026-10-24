@@ -1,3 +1,5 @@
+# 版本不再更新，请移步最新 XTier 仓库：[https://github.com/a775828b-dot/xtier](https://github.com/a775828b-dot/xtier)
+
 # lsglang_q3.8fn
 
 Qwen3.8 Flash Next NVFP4 单卡推理管线：一张 RTX PRO 5000 72GB + 双路 EPYC，512K 上下文、2 并发，MTP 投机解码，
